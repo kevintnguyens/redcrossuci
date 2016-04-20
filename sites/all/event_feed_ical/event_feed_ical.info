@@ -1,0 +1,11 @@
+name = Event Feed ICAL
+description = Imports Event Content Type
+core = 7.x
+package = Features
+version = 7.x-1.0
+dependencies[] = ctools
+dependencies[] = date_ical
+dependencies[] = feeds
+features[ctools][] = feeds:feeds_importer_default:1
+features[features_api][] = api:2
+features[feeds_importer][] = ical_importer

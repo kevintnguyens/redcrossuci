@@ -1,0 +1,16 @@
+name = CKEditor Filter
+description = Simple implementation of a WYSIWYG filter
+package = Input filters
+core = 7.x
+
+dependencies[] = simplehtmldom
+
+files[] = ckeditor_filter.module
+files[] = ckeditor_filter.test
+
+; Information added by Drupal.org packaging script on 2016-02-19
+version = "7.x-1.2"
+core = "7.x"
+project = "ckeditor_filter"
+datestamp = "1455925740"
+

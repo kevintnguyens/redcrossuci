@@ -1,0 +1,10 @@
+name = Group Context
+description = "Allows you to provide context for what should be done with a Groups content"
+core = 7.x
+config = admin/config/system/groupcontext
+
+dependencies[] = group
+
+files[] = includes/views/handlers/groupcontext_plugin_access_group_perm.inc
+
+package = Group

@@ -1,0 +1,73 @@
+<?php
+
+class CKEditorFilterTest extends DrupalUnitTestCase {
+  protected $filter;
+
+  /**
+   * {@inheritdoc
+   */
+  public static function getInfo() {
+    return array(
+      'name' => 'CKEditor Filter Tests',
+      'description' => 'Performs basic sanity checks against the ckeditor filter.',
+      'group' => 'CKEditor Filter',
+    );
+  }
+
+  protected function setUp() {
+    drupal_load('module', 'simplehtmldom');
+    drupal_load('module', 'ckeditor_filter');
+
+    // create a mock filter
+    $this->filter = (object) array(
+      'settings' => ckeditor_filter_ckeditor_filter_defaults(),
+    );
+
+    parent::setUp();
+  }
+
+  /**
+   * Sanity test: ensure blacklisted elements are removed.
+   */
+  public function testFilter() {
+    $content = '<iframe>danger!</iframe>';
+    $filtered = _ckeditor_filter_process($content, $this->filter);
+
+    $this->assertIdentical('danger!', $filtered);
+  }
+
+  /**
+   * Sanity check: ensure blacklisted elements are removed even if nested.
+   */
+  public function testNested() {
+    $content = '<p><iframe>danger!</iframe></p>';
+    $filtered = _ckeditor_filter_process($content, $this->filter);
+
+    $this->assertIdentical('<p>danger!</p>', $filtered);
+  }
+
+  /**
+   * Complex stripping: ensure style elements in nested 
+   */
+  public function testComplex() {
+    $content = '<ul class="list-unstyled" style="padding:100px;float:left;"><li class="hello"><iframe><div style="font-family:comic-sans;text-align:right;">Hi</div></iframe></li></ul>';
+    $filtered = _ckeditor_filter_process($content, $this->filter);
+
+    $this->assertIdentical('<ul class="list-unstyled" style="float:left;"><li class="hello"><div style="text-align:right;">Hi</div></li></ul>', $filtered);
+  }
+
+  /**
+   * Stress test: a flat list of elements shouldn't cause recursion errors.
+   */
+  public function testStress() {
+    $content = '';
+
+    for ($i = 0; $i < 300; $i++) {
+      $content .= '<p>' . $i . '</p>';
+    }
+
+    $filtered = _ckeditor_filter_process($content, $this->filter);
+
+    $this->assertIdentical($content, $filtered);
+  }
+}

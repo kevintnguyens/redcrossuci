@@ -1,0 +1,4 @@
+name = RedCrossUci Feeds Custom Code
+description = Custom Code for the redcrossuci site.
+package = redcrossuci
+core = 7.x

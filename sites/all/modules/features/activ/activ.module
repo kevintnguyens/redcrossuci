@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Activ feature.
+ */
+
+include_once 'activ.features.inc';

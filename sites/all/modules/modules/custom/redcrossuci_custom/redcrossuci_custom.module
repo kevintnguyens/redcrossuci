@@ -1,0 +1,320 @@
+<?php
+  ///drupal basicly when a page is loaded it determines what modules to fire/ and what hooks to fire like
+  //if the hook is hook_veiw_page. this will fire when the page is firing. this db is stored locally
+  //when i publish it its gonna be on the hosting server. im just going to copy and paste db when im done locally
+  //would you be interested in sigining up for events on the webpage?
+  //hook_webform_submission_insert
+function redcrossuci_custom_webform_submission_insert($node, $submission){
+  if ( $node->type=="event"){
+    global $user;
+    $field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_member_list'));
+    $field_collection_item->setHostEntity('node', $node);
+    $field_collection_item->field_phone[LANGUAGE_NONE][]['value'] = $submission->data[3][0];
+    $field_collection_item->field_person_name[$node->language][0]['given']=$submission->data[1]['given'];
+    $field_collection_item->field_person_name[$node->language][0]['family']=$submission->data[1]['family'];
+    $field_collection_item->field_driver[$node->language][0]['value']= +($submission->data[4][0] == "Yes");;
+    $field_collection_item->field_member_info[$node->language][]['target_id']=$user->uid;
+    $field_collection_item->field_member_info[$node->language][]['target_type'] = "user";
+    $field_collection_item->save();
+  
+  }
+    
+  };
+
+function redcrossuci_custom_node_update($node){
+  
+  if ($node->type=='event'){
+    $entity_node = entity_metadata_wrapper('node', $node);
+    $raw_collection = $entity_node->field_member_list->value();
+    
+    foreach ($entity_node->field_member_list->getIterator() as $item){
+        if($item->field_member_info->raw()){
+  
+        $raw_user=user_load($item->field_member_info->raw());
+        $user = entity_metadata_wrapper('user', $raw_user);
+        
+        $raw_collection=$user->field_active_quarter->value();
+        if($raw_user && redcrossuci_custom_check_quarter($user->field_active_quarter,$entity_node)){ 
+        
+
+        $raw_collection=$user->field_active_quarter->value();
+        foreach ($raw_collection as $raw_active_quarter){
+          $field_active_quarter=entity_metadata_wrapper('field_collection_item',$raw_active_quarter);
+          //dpm($field_active_quarter->field_term->tid->value()==$entity_node->field_term->tid->value());
+          if ($field_active_quarter->field_term->tid->value()==$entity_node->field_term->tid->value()){
+            //dpm($field_active_quarter->value());
+            
+            if (redcrossuci_custom_check_event($field_active_quarter,$entity_node->nid->value())){
+              foreach($field_active_quarter->field_events->getIterator() as $event){
+                if ($entity_node->nid->value()==$event->field_event_nid->raw()){
+                  $event->field_points=$item->field_points->value();
+                  $event->save();
+                  break;
+                }
+              }
+              //redcrossuci_custom_check_active_membership($field_active_quarter);
+            }
+            else {
+                $field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_events'));
+                $field_collection_item->setHostEntity('field_collection_item',$field_active_quarter->value());
+                $field_collection_event=entity_metadata_wrapper('field_collection_item',$field_collection_item);
+                $field_collection_event->field_event_nid=$entity_node->nid->value();
+                $field_collection_event->field_points=$item->field_points->value();
+                $field_collection_event->save();
+                $field_collection_item->save();
+                //redcrossuci_custom_check_active_membership($field_active_quarter);
+            }
+            $field_active_quarter->save();
+            $user->save();
+            //redcrossuci_custom_check_active_membership($field_active_quarter);
+
+            }
+          }
+        }
+          
+          else{
+            $field_raw_active_quarter= entity_create('field_collection_item',array('field_name' => 'field_active_quarter'));
+            $field_raw_active_quarter->setHostEntity('user',$raw_user);
+            $field_active_quarter= entity_metadata_wrapper('field_collection_item',$field_raw_active_quarter);
+            //dpm($field_active_quarter->value());
+            $field_active_quarter->field_term=
+            $entity_node->field_term->tid->value();
+            
+            $field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_events'));
+            $field_collection_item->setHostEntity('field_collection_item',$field_active_quarter->value());
+            $field_collection_event=entity_metadata_wrapper('field_collection_item',$field_collection_item);
+            $field_collection_event->field_event_nid=$entity_node->nid->value();
+            $field_collection_event->field_points=$item->field_points->value();
+            $field_collection_event->save();
+            $field_collection_item->save();
+            $field_active_quarter->save();
+            $field_raw_active_quarter->save();
+          }
+      }
+    }
+    }
+  
+}
+function redcrossuci_custom_check_active_membership(&$field_active_quarter) {
+  $fundrasing_points=0;
+  $weekend_points=0;
+  $other_points=0;
+  foreach($field_active_quarter->field_events->getIterator() as $event){
+    dpm($event->value());
+    $raw_node=entity_load('node',array($event->field_event_nid->raw()));
+    $node=entity_metadata_wrapper('node',$raw_node[$event->field_event_nid->raw()] );
+    /*
+    if ($node->field_event_type->name->value()=='Weekend Event'){
+      $weekend_points+=$event->field_points->value();
+    }
+    else if ($node->field_event_type->name->value()=='Fundraising'){
+      $fundrasing_points+=$event->field_points->value();
+    }
+    else {
+      $other_points+=$event->field_points->value();
+    }*/
+  }
+  if ($weekend_points>=20 && $fundrasing_points>=5){
+    if ($fundrasing_points + $weekend_points + $other_points >= 60){
+    $field_active_quarter->field_active_member=1;}
+    else{
+    $field_active_quarter->field_active_member=0;
+    }
+  }
+
+}
+function redcrossuci_custom_check_event($field_user_events,$nid ) {
+    foreach($field_user_events->field_events->getIterator() as $event){
+            //dpm($event->value());
+            //dpm($event->field_event_nid->raw());
+            if ($nid==$event->field_event_nid->raw()){
+              return TRUE;
+            } 
+    }
+    return FALSE;
+}
+function redcrossuci_custom_check_quarter($field_collection_items,$entity_node) {
+  foreach ($field_collection_items->getIterator() as $item){
+    
+    //        $tid= $entity_node->field_term->tid->value();
+          //if ($=$entity_node->field_term->tid->value()){
+          if ($entity_node->field_term->tid->value()==$item->field_term->tid->value()){
+            return TRUE;
+          }
+  }
+  return FALSE;
+}
+//hook_form_alter
+function redcrossuci_custom_form_alter( &$form, &$form_state,$form_id ){
+ if ($form_id=='views_exposed_form' && $form['#id']=='views-exposed-form-active-quarter-page-1'){
+
+    //$string_array=explode('/',$form['#action']);
+    $raw_user=$form->args[0];
+    if (!empty($raw_user)){
+    $user_=entity_metadata_wrapper('user',$raw_user);
+    }
+    else{
+      //else use default user.
+      global $user;
+      $user_=entity_metadata_wrapper('user',$user);
+    }
+    if(!empty($user_->field_active_quarter->value())){
+      unset($form['field_term_tid']['#options']);
+      foreach($user_->field_active_quarter->getIterator() as $item){
+            $value =new stdClass;
+            $value->option[$item->field_term->raw()]=$item->field_term->name->raw();
+            $form['field_term_tid']['#options'][]=$value;
+      }
+      $form['field_term_tid']['#default_value']=$item->field_term->raw();
+    }
+ }
+ if ($form_id=='event_node_form'){
+     foreach ($form['field_member_list']['und'] as $delta => $field) {
+     
+       //dpm($form);
+        if (is_numeric($delta)) {
+          // what this is saying is if both phone field and member field is taken hide the member field. This is because  I dont want member field to ever change
+          // and needed another field to make sure that it wont hide because ajax automailly refreshesh all the field collections
+          dpm($field);
+          if($field['field_member_info']['und'][0]['target_id']['#default_value'] && $field['field_phone']['und'][0]['value']['#default_value']) {
+            $form['field_member_list']['und'][$delta]['field_member_info']['#access']=0;
+
+          }
+          //hide all basic information on the user
+          else {
+            
+            $form['field_member_list']['und'][$delta]['field_phone']['#access']=0;
+            $form['field_member_list']['und'][$delta]['field_person_name']['#access']=0;
+            $form['field_member_list']['und'][$delta]['field_points']['#access']=0;
+          }
+        
+          //$field_collection_item=entity_metadata_wrapper('field_collection_item',$field);
+          //dpm($delta);
+          
+          //$form['field_member_list']['und'][$delta]['field_person_name']['#access']=0;
+        }}
+ }
+ 
+ if( array_key_exists('#node', $form) && $form_id!='event_node_form' && $form_id=='webform_client_form_'.$form['#node']->nid){
+    if ($form['#node']->type=='event'){
+      global $user;
+      if ($user->uid==0){
+        echo '<div class="message"> Interested in signing up for an event?  <a href="/user">Sign up</a> now to join</div>';
+        redcrossuci_custom_hide_form($form);
+        }
+      $event_date=new DateObject($form['#node']->field_date['und'][0]['value']);
+      $date= new DateObject();
+      if ($event_date<$date){
+       echo '<div class="message"> Signups for this event have closed. If you are interested in joining more events look <a href="/events"> here </a> </div>';
+       //redcrossuci_custom_hide_form($form);
+      }  
+    /// if field entity (there on the members list)exists hide value
+      if ($user->uid !=0 ){//&& $date<$event_date){
+        $raw_node = node_load($form['#node']->nid);
+        $node = entity_metadata_wrapper('node', $raw_node);
+        $raw_collection = $node->field_member_list->value();
+        foreach($raw_collection as $item){
+          $entity=entity_metadata_wrapper('field_collection_item',$item);
+          if ($entity->field_member_info->raw()== $user->uid){
+          //$info=$item->field_member_info['und'][0]['target_id']==$user->uid;
+          
+          //if ($info==$user->name){
+            echo '<div class="message"> You have signed up for '.$form['#node']->title."</div>" ;
+            break;
+          }
+        }
+      }
+
+
+  
+    }
+  }
+} 
+//implaments hooks_views_pre_render()
+function redcrossuci_custom_views_pre_render(&$view) {
+  if ($view->name=='active_quarter' ){
+    if ($view->current_display=='page_1'){
+      dpm($view);
+      $tid=$view->exposed_raw_input['field_term_tid'];
+
+      $quarter=taxonomy_term_load($tid);
+            $quarter_name=$quarter->name;
+      foreach($view->header as $item){
+        $item->options['content']='<h1>Quarter: '.$quarter_name.'</h1>';
+    }
+    }
+    if ($view->current_display=='default'){
+      $quarter=taxonomy_term_load($view->args[1]);
+      $quarter_name=$quarter->name;
+      foreach($view->header as $item){
+        $item->options['content']='<h1>Current Quarter: '.$quarter_name.'</h1>';
+      }
+    }
+  }
+}
+
+//implament hook_views_pre_view
+function redcrossuci_custom_views_pre_view(&$view, &$display_id, &$args) {
+
+  if ($view->name=='active_quarter' && $display_id=='default'){
+    $today= new DateObject();
+    $query = new EntityFieldQuery(); 
+    $query->entityCondition('entity_type', 'taxonomy_term')
+    ->entityCondition('bundle', array('quarter'))->fieldCondition('field_date_term','value', $today, '<=')
+    ->fieldOrderBy('field_date_term','value','DESC')
+    ->range(0, 1);
+    $result=$query->execute();
+    foreach($result['taxonomy_term'] as $item){
+      $quarter_id=$item->tid;
+      break;
+    }
+    $args[1]=$quarter_id;
+  }
+}
+//function hook_user_view_alter()
+function redcrossuci_custom_user_view_alter(&$build) {
+
+  }
+//	hook_user_view($account, $view_mode, $langcode)
+function 	redcrossuci_custom_user_view($account, $view_mode, $langcode)  {
+  $today= new DateObject();
+  $query = new EntityFieldQuery(); 
+  $query->entityCondition('entity_type', 'taxonomy_term')
+  ->entityCondition('bundle', array('quarter'))->fieldCondition('field_date_term','value', $today, '<=')
+  ->fieldOrderBy('field_date_term','value','DESC')
+  ->range(0, 1);
+    $result=$query->execute();
+  foreach($result['taxonomy_term'] as $item){
+    $quarter_id=$item->tid;
+    break;
+  }
+
+  $field_active_quarter= entity_metadata_wrapper('field_collecition_item',$account->field_active_quarter);
+
+}
+//hide form base on the  
+function redcrossuci_custom_hide_form(&$form){
+  $form['actions']['submit']['#disabled'] = TRUE;
+        $form['actions']['#attributes']['class'][] = 'element-invisible';
+        $form['submitted']['name']['#access']=0;
+        $form['submitted']['email']['#access']=0;
+        $form['submitted']['number']['#access']=0;
+        $form['submitted']['driver']['#access']=0;
+        $form['submitted']['number_of_seats']['#access']=0;
+}
+
+/**
+  * implaments hook_field_collection_item_presave()
+  */
+function redcrossuci_custom_field_collection_item_presave(FieldCollectionItemEntity $field_collection_item) {
+  if ($field_collection_item->field_name == 'field_member_list'){
+    if ($field_collection_item->field_member_info['und'][0]['target_id']){
+      $raw_user=user_load($field_collection_item->field_member_info['und'][0]['target_id']);
+    }
+
+    $user=entity_metadata_wrapper('user', $raw_user);
+    $field_collection_item->field_person_name['und'][0]['given']=$user->field_person_name->given->value();
+    $field_collection_item->field_person_name['und'][0]['family']=$user->field_person_name->family->value();
+    $field_collection_item->field_phone['und'][0]['value']=$user->field_phone->value();
+    };
+}

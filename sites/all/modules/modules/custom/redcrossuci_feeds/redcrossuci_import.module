@@ -1,0 +1,31 @@
+<?php
+  //hook_feeds_presave
+    function redcrossuci_import_feeds_presave(FeedsSource $source, $entity, $item) {
+    $today=new DateObject();
+    $today=$today->format('Y-m-d');
+    $result=db_query("SELECT taxonomy_term_data.name AS taxonomy_term_data_name, taxonomy_term_data.vid AS taxonomy_term_data_vid, taxonomy_term_data.tid AS tid, taxonomy_vocabulary.machine_name AS taxonomy_vocabulary_machine_name, field_data_field_date_term.field_date_term_value AS field_data_field_date_term_field_date_term_value, 'taxonomy_term' AS field_data_field_date_term_taxonomy_term_entity_type FROM {taxonomy_term_data} taxonomy_term_data LEFT JOIN {taxonomy_vocabulary} taxonomy_vocabulary ON taxonomy_term_data.vid = taxonomy_vocabulary.vid LEFT JOIN {field_data_field_date_term} field_data_field_date_term ON taxonomy_term_data.tid = field_data_field_date_term.entity_id AND (field_data_field_date_term.entity_type = 'taxonomy_term' AND field_data_field_date_term.deleted = '0') WHERE (( (taxonomy_vocabulary.machine_name IN  ('quarter')) AND (DATE_FORMAT(field_data_field_date_term.field_date_term_value2, '%Y-%m-%d') <= '".$today."') )) ORDER BY field_data_field_date_term_field_date_term_value DESC LIMIT 3 OFFSET 0");
+  //checks the last three avialbe quaters and sorts the event in to a quater type
+  foreach($result as $item){
+    $term=taxonomy_term_load($item->tid);      
+    
+    if ($entiy->field_date[$entity->language][0]['value'] <=$term->field_date_term['und'][0]['value'] &&
+        $entiy->field_date[$entity->language][0]['value2'] <= $term->field_date_term['und'][0]['value2']){
+          $entity->field_term[$entity->language][0]['tid'] = $item->tid;
+      }
+     
+    }
+    if ($source->id=='voulenteer_event_import'){
+      $entity->field_event_type[$entity->language][0]['tid'] = 3;
+
+    }
+    if ($source->id=='general_meetings_import'){
+      $entity->field_event_type[$entity->language][0]['tid'] = 2;
+   
+    } 
+    if ($source->id=='social_event_importer'){
+      $entity->field_event_type[$entity->language][0]['tid'] = 4;
+    }
+      if ($source->id=='fundraising_event_import'){
+      $entity->field_event_type[$entity->language][0]['tid'] = 1;
+    }
+  }

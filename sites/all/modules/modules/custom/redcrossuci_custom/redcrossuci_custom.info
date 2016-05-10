@@ -1,0 +1,6 @@
+name = redcrossuci Custom Code
+description = Custom Code for the redcrossuci site.
+package = redcrossuci
+core = 7.x
+
+scripts[] = js/redcrossuci_custom.js

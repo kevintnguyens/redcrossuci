@@ -1,0 +1,10 @@
+name = Activ
+core = 7.x
+package = Features
+dependencies[] = date
+dependencies[] = views
+features[ctools][] = views:views_default:3.0
+features[features_api][] = api:2
+features[views_view][] = active_quarter
+features[views_view][] = all_active_members
+features_exclude[dependencies][ctools] = ctools

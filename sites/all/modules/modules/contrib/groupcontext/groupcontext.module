@@ -1,0 +1,345 @@
+<?php
+/**
+ * @file
+ * Get a group from a viewed page.
+ */
+
+
+/**
+ * Implements hook_menu().
+ */
+function groupcontext_menu() {
+  $items['admin/config/system/groupcontext'] = array(
+    'title' => 'Group context',
+    'description' => 'Group context detection and selection',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('groupcontext_configure_form'),
+    'access arguments' => array('administer group'),
+    'file' => 'groupcontext.admin.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function groupcontext_theme() {
+  return array(
+    'groupcontext_configure_form' => array(
+      'render element' => 'form',
+    ),
+  );
+}
+
+/**
+ * Implements hook_entity_property_info().
+ *
+ * Add the current-group to the system token (i.e. like current-user).
+ */
+function groupcontext_entity_property_info() {
+  $info = array('site' => array('properties' => array()));
+
+  $info['site']['properties']['groupcontext'] = array(
+    'label' => t('Current Group'),
+    'description' => t('The Group from context, if exists.'),
+    'getter callback' => 'groupcontext_get_properties',
+    'type' => 'group',
+  );
+
+  return $info;
+}
+
+/**
+ * Property getter callback.
+ *
+ * Get the current group from context.
+ *
+ * @code
+ *   $wrapper = entity_metadata_site_wrapper();
+ *   $group = $wrapper->groupcontext->value();
+ * @endcode
+ */
+function groupcontext_get_properties($data = array(), array $options, $name, $type) {
+  if ($gid = groupcontext()) {
+    return group_load($gid);
+  }
+}
+
+/**
+ * Implements hook_groupcontext_negotiation_info().
+ */
+function groupcontext_groupcontext_negotiation_info() {
+  $providers = array();
+
+  $providers['url'] = array(
+    'name' => t('URL (content create)'),
+    'description' => t('Select groups if they were passed in the node create URL (e.g. group/1/node/add/page).'),
+    'callback' => 'groupcontext_handler_url',
+  );
+
+  $providers['node'] = array(
+    'name' => t('Node'),
+    'description' => t('Determine context by checking if a node is content of a group.'),
+    'callback' => 'groupcontext_handler_node',
+    'menu path' => array('node/%'),
+  );
+
+  $providers['group'] = array(
+    'name' => t('Group'),
+    'description' => t('Determine context by checking if the path is a group path (e.g. group/1/*).'),
+    'callback' => 'groupcontext_handler_group',
+    //'menu path' => array('group/%', 'group/%/%'),
+  );
+
+  return $providers;
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function groupcontext_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'groupcontext') . '/includes/views',
+  );
+}
+
+/**
+ * Get or set group context using the menu system.
+ *
+ * @return int
+ *   The group ID, or FALSE if no context was found.
+ */
+function groupcontext() {
+  global $user;
+  $context = &drupal_static(__FUNCTION__, FALSE);
+
+  if ($context !== FALSE) {
+    return $context;
+  }
+
+  // Set the context to array, so we can know this function has been already
+  // executed.
+  $context = array();
+
+  // Get context from context handlers.
+  if ($gid = groupcontext_determine_context()) {
+    $context = $gid;
+    if ($user->uid) {
+      // Save the group ID in the authenticated user's session.
+      $_SESSION['groupcontext'] = $gid;
+    }
+  }
+
+  return $context;
+}
+
+/**
+ * Return all the defined group context providers.
+ *
+ * @return array
+ *   An array of group context providers.
+ */
+function groupcontext_negotiation_info() {
+  $groupcontext_providers = &drupal_static(__FUNCTION__);
+
+  if (!isset($groupcontext_providers)) {
+    // Collect all the module-defined og_context negotiation providers.
+    $groupcontext_providers = module_invoke_all('groupcontext_negotiation_info');
+
+    // Let other modules alter the list of og_context providers.
+    drupal_alter('groupcontext_negotiation_info', $groupcontext_providers);
+  }
+
+  // Assign default values.
+  foreach ($groupcontext_providers as &$groupcontext_provider) {
+    $groupcontext_provider += array(
+      'menu path' => array(),
+    );
+  }
+
+  return $groupcontext_providers;
+}
+
+
+/**
+ * Save a list of context providers.
+ *
+ * @param $groupcontext_providers
+ *   An array of context provider ids.
+ */
+function groupcontext_negotiation_set($groupcontext_providers) {
+  $type = 'groupcontext';
+  // Save only the necessary fields.
+  $provider_fields = array('callbacks');
+
+  $negotiation = array();
+  $providers_weight = array();
+  $defined_providers = groupcontext_negotiation_info();
+
+  // Initialize the providers weight list.
+  foreach ($groupcontext_providers as $id => $provider) {
+    $providers_weight[$id] = groupcontext_provider_weight($provider);
+  }
+
+  // Order providers list by weight.
+  asort($providers_weight);
+
+  foreach ($providers_weight as $id => $weight) {
+    if (isset($defined_providers[$id])) {
+      $provider = $defined_providers[$id];
+
+      $provider_data = array();
+      foreach ($provider_fields as $field) {
+        if (isset($provider[$field])) {
+          $provider_data[$field] = $provider[$field];
+        }
+      }
+      $negotiation[$id] = $provider_data;
+    }
+  }
+
+  variable_set("groupcontext_negotiation_$type", $negotiation);
+}
+
+/**
+ * Return the passed group context provider weight or a default value.
+ *
+ * @param $provider
+ *   A group context provider data structure.
+ *
+ * @return int
+ *   A numeric weight.
+ */
+function groupcontext_provider_weight($provider) {
+  $default = is_numeric($provider) ? $provider : 0;
+  return isset($provider['weight']) && is_numeric($provider['weight']) ? $provider['weight'] : $default;
+}
+
+/**
+ * Determine the best matching context of a viewed page.
+ *
+ * @param $item
+ *   Optional; A menu item that context should be extracted from. If empty
+ *   defaults to the current menu item by using menu_get_item().
+ *
+ * @return array
+ *   The group ID for the current context.
+ */
+function groupcontext_determine_context($item = NULL) {
+  // Enable Group context handler by default.
+  $defaults = array('group' => -3);
+  // Optional enable url and node group context handlers if gnode is enabled.
+  if (module_exists('gnode')) {
+    $defaults = array_merge($defaults, array('url' => -5, 'node' => -4));
+  }
+  if (!$enabled_providers = variable_get('groupcontext_negotiation_groupcontext', $defaults)) {
+    return;
+  }
+
+  if (empty($item)) {
+    $item = menu_get_item();
+  }
+
+  $gid = array();
+  $providers = groupcontext_negotiation_info();
+  foreach ($enabled_providers as $name => $ignore) {
+    if (empty($providers[$name])) {
+      continue;
+    }
+    $provider = $providers[$name];
+    $invoke = FALSE;
+    if (!empty($provider['menu path'])) {
+      foreach ($provider['menu path'] as $path) {
+        if (strpos($item['path'], $path) === 0) {
+          $invoke = TRUE;
+          // Path matches, so we can break.
+          break;
+        }
+      }
+    }
+    else {
+      // Context isn't determined by the menu item.
+      $invoke = TRUE;
+    }
+
+    if ($invoke && ($contexts = call_user_func($provider['callback']))) {
+      // Check if one of the group IDs already exists in the session, and if
+      // so use it.
+      $gid = $contexts;
+      break;
+    }
+  }
+
+  return !empty($gid) ? $gid : FALSE;
+}
+
+/**
+ * Context handler; Get groups from node create URL.
+ */
+function groupcontext_handler_url() {
+  $item = menu_get_item();
+  if (strpos($item['path'], 'group/%/node/add/') !== 0) {
+    return;
+  }
+  if (empty($item['original_map'][1])) {
+    // If we don't have this key in the array, it means the user doesn't have
+    // access to create this node.
+    return;
+  }
+
+  return $item['original_map'][1];
+}
+
+/**
+ * Context handler; Get groups from existing node or ctools context.
+ */
+function groupcontext_handler_node() {
+  if ($node = menu_get_object()) {
+    return empty($node->group) ? FALSE : $node->group;
+  }
+}
+
+/**
+ * Determine the context from the group specific pages.
+ */
+function groupcontext_handler_group() {
+  $item = menu_get_item();
+
+  if (empty($item['map'][0]) || $item['map'][0] != 'group' || empty($item['map'][1])) {
+    return NULL;
+  }
+
+  $group = $item['map'][1];
+
+  if (is_object($group) && !empty($group->gid) && is_numeric($group->gid)) {
+    return $item['map'][1]->gid;
+  }
+  elseif (is_numeric($group)) {
+    return $group;
+  }
+}
+
+/**
+ * Helper function to handle views page access.
+ *
+ * @param $perm
+ *   The group permission to search for.
+ *
+ * @return boolean
+ *   TRUE if user is allowed access to the page.
+ */
+function _groupcontext_views_page_access($perm) {
+  // If this isn't part of the group URL structure then we won't worry about it.
+  if (arg(0) != 'group') {
+    return;
+  }
+
+  // Group id is always argument 1 from the URL.
+  $gid = arg(1);
+  if (is_numeric($gid)) {
+    $group = group_load($gid);
+    return group_access($perm, $group);
+  }
+}
